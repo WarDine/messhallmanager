@@ -1,7 +1,21 @@
 package main
 
-import "fmt"
+import (
+	// "events"
+	//"events"
+	"log"
+	"net/http"
+	"repositories"
+	messHallManagerAPI "submarineapi"
+
+	"github.com/emicklei/go-restful"
+)
 
 func main() {
-	fmt.Println("Hello World!")
+	// Init Repositories
+	repositories.PostgresRepo = *repositories.NewPostgresManager()
+
+	// Start http server
+	restful.Add(messHallManagerAPI.NewMessHallManagerAPI())
+	log.Fatal(http.ListenAndServe(":8090", nil))
 }
