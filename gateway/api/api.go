@@ -6,6 +6,7 @@ import (
 	"usecases"
 
 	restful "github.com/emicklei/go-restful"
+	"github.com/google/uuid"
 )
 
 // NewSubmarineAPI returns an instance of a rest api handler
@@ -164,21 +165,21 @@ func AddMessHall(request *restful.Request, response *restful.Response) {
 	}
 
 	/* Populate new mess hall struct */
+	messHallUID := uuid.New().String()
 	newMessHall := usecases.MessHall{
-		MessHallUID:      queryBody.MessHallUID,
+		MessHallUID:      messHallUID,
 		Street:           queryBody.Street,
 		City:             queryBody.City,
 		Country:          queryBody.Country,
-		MenuUID:          queryBody.MenuUID,
 		Status:           queryBody.Status,
 		AttendanceNumber: queryBody.AttendanceNumber,
 	}
 
 	/* Populat new mess hall admin struct */
 	newMessHallAdmin := usecases.MessHallAdmin{
-		MessHallAdminUID: queryBody.MessHallAdminUID,
+		MessHallAdminUID: uuid.New().String(),
 		Nickname:         queryBody.MessHallAdminNickname,
-		MessHallUID:      queryBody.MessHallUID,
+		MessHallUID:      messHallUID,
 	}
 
 	/* Add mess hall info and its admin info to repository */
