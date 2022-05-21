@@ -29,6 +29,8 @@ const (
 
 	deleteMessHallQuery      = "DELETE FROM messhall WHERE messhalls_uid = $1;"
 	deleteMessHallAdminQuery = "DELETE FROM messhalls_admins WHERE messhalls_admins.messhall_uid = $1;"
+
+	getRecipesByIDQuery = "SELECT * FROM %s WHERE recipe_uid='%s';"
 )
 
 type PostgresManager struct {
@@ -279,6 +281,10 @@ func (pg *PostgresManager) GetMessHallMenuInfo(messHallID string) ([]usecases.Me
 		return nil, err
 	}
 
+	if len(messHall) == 0 {
+		return nil, nil
+	}
+
 	/* Get the menu for this mess hall */
 	messHallMenu := []usecases.Menu{}
 	query := fmt.Sprintf(selectMessHallMenuInfoQuery, messHall[0].MenuUID)
@@ -292,7 +298,22 @@ func (pg *PostgresManager) GetMessHallMenuInfo(messHallID string) ([]usecases.Me
 
 // GetRecipesByRecipeUID
 func (pg *PostgresManager) GetRecipesByRecipeUID(recipeUID string) []usecases.Recipe {
-	return nil
+
+	db := pg.conn
+	query := fmt.Sprintf(getRecipesByIDQuery, "recipe", recipeUID)
+
+	recipes := []usecases.Recipe{}
+	err := db.Select(&recipes, query)
+
+	if err != nil {
+		log.Println(err)
+	}
+
+	if len(recipes) == 0 {
+		log.Println("Recipes table is empty")
+	}
+
+	return recipes
 }
 
 // IncrementMessHallAttendance
