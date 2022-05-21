@@ -1,10 +1,6 @@
 package repositories
 
 import (
-	// "recipemanager/usecases"
-	// "database/sql"
-	// "encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -14,9 +10,25 @@ import (
 	"time"
 	"usecases"
 
-	// "recipemanager/usecases"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+)
+
+const (
+	selectAllMessHallInfoQuery  = "SELECT * FROM messhall;"
+	selectMessHallInfoByIDQuery = "SELECT * FROM messhall WHERE messhalls_uid = '%s';"
+	selectMessHallMenuInfoQuery = "SELECT * FROM menu WHERE menu_uid = '%s';"
+
+	selectAllMessHallAdminInfoQuery  = "SELECT * FROM messhalls_admins;"
+	selectMessHallAdminInfoByIDQuery = "SELECT * FROM messhalls_admins WHERE messhalls_admins_uid = '%s';"
+
+	updateMessHallStatusQuery = "UPDATE messhall SET status = $2 WHERE messhalls_uid = $1;"
+
+	incrementMessHallAttendanceQuery = "UPDATE messhall SET attendance_number = attendance_number + 1 WHERE messhalls_uid = $1;"
+	decrementMessHallAttendanceQuery = "UPDATE messhall SET attendance_number = attendance_number - 1 WHERE messhalls_uid = $1;"
+
+	deleteMessHallQuery      = "DELETE FROM messhall WHERE messhalls_uid = $1;"
+	deleteMessHallAdminQuery = "DELETE FROM messhalls_admins WHERE messhalls_admins.messhall_uid = $1;"
 )
 
 type PostgresManager struct {
@@ -25,7 +37,7 @@ type PostgresManager struct {
 
 var PostgresRepo PostgresManager
 
-// return postgres objects which contains connection to database
+// NewPostgresManager return postgres objects which contains connection to database
 func NewPostgresManager() *PostgresManager {
 
 	port, err := strconv.Atoi(os.Getenv("PGPORT"))
@@ -56,89 +68,39 @@ func NewPostgresManager() *PostgresManager {
 	}
 }
 
-func (pg *PostgresManager) GetAllMessHallsInfo() ([]usecases.MessHall, error) {
-
-	db := pg.conn
-
-	messHalls := []usecases.MessHall{}
-	err := db.Select(&messHalls, "SELECT * FROM mass_hall;")
-	if err != nil {
-		return nil, err
-	}
-
-	if len(messHalls) == 0 {
-		return nil, errors.New("MessHall table is empty")
-	}
-
-	return messHalls, nil
+//DeleteConnection closes DB connection
+func (pg *PostgresManager) DeleteConnection() {
+	pg.conn.Close()
 }
 
-func GetListDBMEssHallTags(messHall *usecases.MessHall) []string {
+// getListDBMEssHallTags
+func getListDBMEssHallTags(messHall *usecases.MessHall) []string {
 
 	t := reflect.TypeOf(*messHall)
 
 	tagFields := make([]string, t.NumField())
 	for i := range tagFields {
-		tagFields[i] = GetDBTagName(messHall, t.Field(i).Name)
+		tagFields[i] = getDBTagName(messHall, t.Field(i).Name)
 	}
 
 	return tagFields
 }
 
-func (pg *PostgresManager) AddMessHall(messHall *usecases.MessHall) error {
+// getListDBMEssHallAdminTags
+func getListDBMEssHallAdminTags(messHall *usecases.MessHallAdmin) []string {
 
-	db := pg.conn
-	tx := db.MustBegin()
-
-	structTags := GetListDBMEssHallTags(messHall)
-	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", "mass_hall", createQueryFields(structTags), createQueryValues(structTags))
-
-	tx.NamedExec(query, &messHall)
-	err := tx.Commit()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (pg *PostgresManager) PingConnection() {
-
-	err := pg.conn.Ping()
-	if err != nil {
-		panic(err)
-	} else {
-		log.Println("Connection works as expected")
-	}
-}
-
-func (pg *PostgresManager) DeleteConnection() {
-	defer pg.conn.Close()
-}
-
-type Ingredient struct {
-	Ingredient_uid int    `db:"ingredient_uid" json:"ingredientUID"`
-	Name           string `db:"ingredient_name" json:"name"`
-	RecipeUID      int    `db:"recipe_uid" json:"recipeUID"`
-	Amount         int    `db:"amount" json:"amount"`
-}
-
-// get list of all db tags of a struct ingredient
-// call with GetListDBTags(ingredient)
-func GetListDBTags(genericStruct *Ingredient) []string {
-
-	t := reflect.TypeOf(*genericStruct)
+	t := reflect.TypeOf(*messHall)
 
 	tagFields := make([]string, t.NumField())
 	for i := range tagFields {
-		tagFields[i] = GetDBTagName(genericStruct, t.Field(i).Name)
+		tagFields[i] = getDBTagName(messHall, t.Field(i).Name)
 	}
 
 	return tagFields
 }
 
-// get db tag name of a field from a generic struct
-func GetDBTagName(genericStruct interface{}, structField string) string {
+// getDBTagName returns a field from a generic struct
+func getDBTagName(genericStruct interface{}, structField string) string {
 
 	tagName := "db"
 	field, ok := reflect.TypeOf(genericStruct).Elem().FieldByName(structField)
@@ -150,7 +112,7 @@ func GetDBTagName(genericStruct interface{}, structField string) string {
 }
 
 /**
- * this generates a string like:
+ * createQueryFields generates a string like:
  * "ingredient_name, recipe_uid, amount"
  */
 func createQueryFields(fields []string) string {
@@ -171,7 +133,7 @@ func createQueryFields(fields []string) string {
 }
 
 /**
- * this generates a string like:
+ * createQueryValues generates a string like:
  * ":ingredient_name, :recipe_uid, :amount"
  */
 func createQueryValues(fields []string) string {
@@ -192,108 +154,159 @@ func createQueryValues(fields []string) string {
 	return queryFields.String()
 }
 
-// example of query
-// tx.NamedExec("INSERT INTO ingredient (ingredient_name, recipe_uid, amount) VALUES (:ingredient_name, :recipe_uid, :amount)", &second_ingredient)
-func (pg *PostgresManager) InsertIngredientIntoDB(tableName string, ingredient *Ingredient) {
-
-	structTags := GetListDBTags(ingredient)
-	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", tableName, createQueryFields(structTags), createQueryValues(structTags))
-	db := pg.conn
-
-	tx := db.MustBegin()
-
-	tx.NamedExec(query, &ingredient)
-	err := tx.Commit()
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-func (pg *PostgresManager) GetAllIngredients(tableName string) []Ingredient {
+// GetAllMessHallsInfo
+func (pg *PostgresManager) GetMessHallsInfoByID(id string) ([]usecases.MessHall, error) {
 
 	db := pg.conn
 
-	ingredients := []Ingredient{}
-	err := db.Select(&ingredients, "SELECT * FROM ingredient;")
+	messHalls := []usecases.MessHall{}
+	query := fmt.Sprintf(selectMessHallInfoByIDQuery, id)
+	err := db.Select(&messHalls, query)
+
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
-	if len(ingredients) == 0 {
-		log.Println("Ingredients table is empty")
-	}
-
-	return ingredients
+	return messHalls, nil
 }
 
-func convertfilterToString(m map[string]interface{}) {
-
-}
-
-/**
- * filter is a map[string]interface{}
- * it will be converted into a string an added in query
- */
-// WIP
-func (pg *PostgresManager) GetFilteredIngredients(tableName string, filter string) []Ingredient {
+// GetAllMessHallsInfo returns info about all Mess Halls
+func (pg *PostgresManager) GetAllMessHallsInfo() ([]usecases.MessHall, error) {
 
 	db := pg.conn
 
-	if filter == "" {
-		log.Print("Filter is empty; Getting all values:")
-		return pg.GetAllIngredients(tableName)
-	}
-
-	ingredients := []Ingredient{}
-	err := db.Select(&ingredients, "SELECT * FROM ingredient;")
+	messHalls := []usecases.MessHall{}
+	err := db.Select(&messHalls, selectAllMessHallInfoQuery)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
-	if len(ingredients) == 0 {
-		log.Println("Ingredients table is empty")
+	if len(messHalls) == 0 {
+		return nil, nil
 	}
 
-	return ingredients
+	return messHalls, nil
 }
 
-// this function is just an example of how to use sqlx lib
-func (pg *PostgresManager) TestDatabase(tableName string) {
+// GetAllMessHallAdminsInfoByID
+func (pg *PostgresManager) GetMessHallAdminsInfoByID(id string) ([]usecases.MessHallAdmin, error) {
 
 	db := pg.conn
 
-	tx := db.MustBegin()
-	var secondIngredient = &Ingredient{
-		Name:      "Pastarnac",
-		RecipeUID: 1918273,
-		Amount:    2,
-	}
-
-	tx.MustExec("INSERT INTO ingredient (ingredient_name, recipe_uid, amount) VALUES ($1, $2, $3)", "Telina", 1918273, 2)
-	tx.NamedExec("INSERT INTO ingredient (ingredient_name, recipe_uid, amount) VALUES (:ingredient_name, :recipe_uid, :amount)", &secondIngredient)
-	tx.MustExec("INSERT INTO ingredient (ingredient_name, recipe_uid, amount) VALUES ($1, $2, $3)", "Morcov", 1918273, 4)
-	tx.Commit()
-
-	ingredients := []Ingredient{}
-
-	err := db.Select(&ingredients, "SELECT * FROM ingredient;")
+	messHallAdmins := []usecases.MessHallAdmin{}
+	query := fmt.Sprintf(selectMessHallAdminInfoByIDQuery, id)
+	err := db.Select(&messHallAdmins, query)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
-	log.Printf("Len of ingredients: %d\n", len(ingredients))
-	if len(ingredients) >= 2 {
-		ingredient1, ingredient2 := ingredients[0], ingredients[1]
-		log.Printf("%#v\n%#v", ingredient1, ingredient2)
-	}
+	return messHallAdmins, nil
+}
 
-	pastarnac := Ingredient{}
-	err = db.Get(&pastarnac, "SELECT * FROM ingredient WHERE ingredient_name=$1;", "Pastarnac")
+// GetAllMessHallAdminsInfo
+func (pg *PostgresManager) GetAllMessHallAdminsInfo() ([]usecases.MessHallAdmin, error) {
+
+	db := pg.conn
+
+	messHallAdmins := []usecases.MessHallAdmin{}
+	err := db.Select(&messHallAdmins, selectAllMessHallAdminInfoQuery)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
-	log.Printf("Pastarnacul: %#v\n", pastarnac)
+	if len(messHallAdmins) == 0 {
+		return nil, nil
+	}
 
-	pg.DeleteConnection()
+	return messHallAdmins, nil
+}
+
+// UpdateMessHallStatus
+func (pg *PostgresManager) UpdateMessHallStatus(id string, status string) error {
+	db := pg.conn
+
+	_, err := db.Exec(updateMessHallStatusQuery, id, status)
+	return err
+}
+
+// DeleteMessHall
+func (pg *PostgresManager) DeleteMessHall(id string) error {
+	db := pg.conn
+
+	_, err := db.Exec(deleteMessHallQuery, id)
+	_, err = db.Exec(deleteMessHallAdminQuery, id)
+	return err
+}
+
+// AddMessHall creates a new mess hall entry
+func (pg *PostgresManager) AddMessHall(messHall *usecases.MessHall, messHallAdmin *usecases.MessHallAdmin) error {
+
+	db := pg.conn
+	masshassTX := db.MustBegin()
+	masshassadminsTX := db.MustBegin()
+
+	//insert mess Hall info into table
+	structTags := getListDBMEssHallTags(messHall)
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", "messhall", createQueryFields(structTags), createQueryValues(structTags))
+	masshassTX.NamedExec(query, &messHall)
+	err := masshassTX.Commit()
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	//insert mess hall admin info into table
+	structTags = getListDBMEssHallAdminTags(messHallAdmin)
+	query = fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", "messhalls_admins", createQueryFields(structTags), createQueryValues(structTags))
+	masshassadminsTX.NamedExec(query, &messHallAdmin)
+	err = masshassadminsTX.Commit()
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	return nil
+}
+
+// GetMessHallMenuInfo
+func (pg *PostgresManager) GetMessHallMenuInfo(messHallID string) ([]usecases.Menu, error) {
+
+	db := pg.conn
+
+	/* Get the messhall with this ID*/
+	messHall, err := pg.GetMessHallsInfoByID(messHallID)
+	if err != nil {
+		return nil, err
+	}
+
+	/* Get the menu for this mess hall */
+	messHallMenu := []usecases.Menu{}
+	query := fmt.Sprintf(selectMessHallMenuInfoQuery, messHall[0].MenuUID)
+	err = db.Select(&messHallMenu, query)
+	if err != nil {
+		return nil, err
+	}
+
+	return messHallMenu, nil
+}
+
+// GetRecipesByRecipeUID
+func (pg *PostgresManager) GetRecipesByRecipeUID(recipeUID string) []usecases.Recipe {
+	return nil
+}
+
+// IncrementMessHallAttendance
+func (pg *PostgresManager) IncrementMessHallAttendance(id string) error {
+	db := pg.conn
+
+	_, err := db.Exec(incrementMessHallAttendanceQuery, id)
+	return err
+}
+
+// DecrementMessHallAttendance
+func (pg *PostgresManager) DecrementMessHallAttendance(id string) error {
+	db := pg.conn
+
+	_, err := db.Exec(decrementMessHallAttendanceQuery, id)
+	return err
 }
