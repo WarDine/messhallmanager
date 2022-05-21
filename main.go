@@ -18,4 +18,5 @@ func main() {
 	// Start http server
 	restful.Add(messHallManagerAPI.NewMessHallManagerAPI())
 	log.Fatal(http.ListenAndServe(":8090", nil))
+
 }

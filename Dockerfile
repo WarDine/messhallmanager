@@ -12,6 +12,6 @@ COPY .env ./
 
 RUN go mod download
 RUN go mod tidy
-RUN go build -o ./recipe-manager-service
+RUN go build -o ./messhall-manager-service
 
-CMD [ "./recipe-manager-service" ]
+CMD [ "./messhall-manager-service" ]

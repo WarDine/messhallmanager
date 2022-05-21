@@ -11,7 +11,17 @@ import (
 
 // NewSubmarineAPI returns an instance of a rest api handler
 func NewMessHallManagerAPI() *restful.WebService {
+	cors := restful.CrossOriginResourceSharing{
+		// ExposeHeaders:  []string{"X-My-Header"},
+		AllowedMethods: []string{"GET", "POST", "DELETE", "UPDATE"},
+		AllowedHeaders: []string{"Content-Type", "Accept", "Authorization"},
+		AllowedDomains: []string{"*"},
+		CookiesAllowed: false,
+	}
+
 	service := new(restful.WebService)
+	service.Filter(cors.Filter)
+
 	service.Path("/messhallmanager").
 		Consumes(restful.MIME_JSON).
 		Produces(restful.MIME_JSON)
