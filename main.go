@@ -3,12 +3,9 @@ package main
 import (
 	// "events"
 	//"events"
-	"log"
-	"net/http"
+
 	"repositories"
 	messHallManagerAPI "submarineapi"
-
-	"github.com/emicklei/go-restful"
 )
 
 func main() {
@@ -16,7 +13,8 @@ func main() {
 	repositories.PostgresRepo = *repositories.NewPostgresManager()
 
 	// Start http server
-	restful.Add(messHallManagerAPI.NewMessHallManagerAPI())
-	log.Fatal(http.ListenAndServe(":8090", nil))
+	// restful.Add(messHallManagerAPI.NewMessHallManagerAPI())
+	// log.Fatal(http.ListenAndServe(":8090", nil))
+	messHallManagerAPI.StartServer()
 
 }

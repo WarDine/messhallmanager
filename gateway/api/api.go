@@ -2,89 +2,114 @@ package submarineAPI
 
 import (
 	"domain"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
 	"repositories"
 	"usecases"
 
-	restful "github.com/emicklei/go-restful"
 	"github.com/google/uuid"
+	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
 )
 
-// NewSubmarineAPI returns an instance of a rest api handler
-func NewMessHallManagerAPI() *restful.WebService {
-	cors := restful.CrossOriginResourceSharing{
-		// ExposeHeaders:  []string{"X-My-Header"},
-		AllowedMethods: []string{"GET", "POST", "DELETE", "UPDATE"},
-		AllowedHeaders: []string{"Content-Type", "Accept", "Authorization"},
-		AllowedDomains: []string{"*"},
-		CookiesAllowed: false,
-	}
+const (
+	HttpServerPort = ":8081"
+)
 
-	service := new(restful.WebService)
-	service.Filter(cors.Filter)
+func NewRecipeAPI() *mux.Router {
 
-	service.Path("/messhallmanager").
-		Consumes(restful.MIME_JSON).
-		Produces(restful.MIME_JSON)
+	var router = mux.NewRouter()
+	router.Use(commonMiddleware)
+	router.Use(mux.CORSMethodMiddleware(router))
 
-	service.Route(service.GET("/messhall/info/").To(GetMessHallInfo))
-	service.Route(service.GET("/messhall/info/{messhall_id}").To(GetMessHallInfoByID))
-	service.Route(service.GET("/messhall/menu/{messhall_id}").To(GetMessHallMenu))
+	router.HandleFunc("/messhallmanager/messhall/info", GetMessHallInfo).Methods("GET")
+	router.HandleFunc("/messhallmanager/messhall/info/{messhall_id}", GetMessHallInfoByID).Methods("GET")
+	router.HandleFunc("/messhallmanager/messhall/menu/{messhall_id}", GetMessHallMenu).Methods("GET")
 
-	service.Route(service.POST("/messhall/checkin/{messhall_id}").To(CheckinHandler))
-	service.Route(service.POST("/messhall/checkout/{messhall_id}").To(CheckoutHandler))
+	router.HandleFunc("/messhallmanager/messhall/checkin/{messhall_id}", CheckinHandler).Methods("POST")
+	router.HandleFunc("/messhallmanager/messhall/checkout/{messhall_id}", CheckoutHandler).Methods("POST")
 
-	service.Route(service.GET("/messhalladmin/info/").To(GetMessHallAdminInfo))
-	service.Route(service.GET("/messhalladmin/info/{messhalladmin_id}").To(GetMessHallAdminInfoByID))
+	router.HandleFunc("/messhallmanager/messhalladmin/info", GetMessHallAdminInfo).Methods("GET")
+	router.HandleFunc("/messhallmanager/messhalladmin/info/{messhalladmin_id}", GetMessHallAdminInfoByID).Methods("GET")
 
-	service.Route(service.POST("/messhall/add").To(AddMessHall))
-	service.Route(service.DELETE("/messhall/delete/{messhall_id}").To(DeleteMessHall))
+	router.HandleFunc("/messhallmanager/messhall/add", AddMessHall).Methods("POST")
+	router.HandleFunc("/messhallmanager/messhall/add", optionsHandler).Methods("OPTIONS")
 
-	service.Route(service.POST("/messhall/update/{messhall_id}/{new_status}").To(UpdateMessHall))
+	router.HandleFunc("/messhallmanager/messhall/delete/{messhall_id}", DeleteMessHall).Methods("DELETE")
 
-	return service
+	router.HandleFunc("/messhallmanager/messhall/update/{messhall_id}/{new_status}", UpdateMessHall).Methods("POST")
+	router.HandleFunc("/messhallmanager/messhall/update", optionsHandler).Methods("OPTIONS")
+
+	return router
+}
+
+func StartServer() {
+	headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization", "Origin", "application/json"})
+	originsOk := handlers.AllowedOrigins([]string{"*"})
+	methodsOk := handlers.AllowedMethods([]string{"GET", "POST", "DELETE", "UPDATE", "OPTIONS", "PUT", "PATCH"})
+
+	router := NewRecipeAPI()
+
+	fmt.Printf("HTTP Server is running at http://localhost%s\n", HttpServerPort)
+	log.Fatal(http.ListenAndServe(HttpServerPort, handlers.CORS(originsOk, headersOk, methodsOk)(router)))
+}
+
+func commonMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+	})
+}
+
+func optionsHandler(_ http.ResponseWriter, _ *http.Request) {
+	return
 }
 
 // CheckinHandler
-func CheckinHandler(request *restful.Request, response *restful.Response) {
-	messhallID := request.PathParameter("messhall_id")
+func CheckinHandler(w http.ResponseWriter, r *http.Request) { //(request *restful.Request, response *restful.Response) {
+	params := mux.Vars(r)
+	messhallID := params["messhall_id"]
 
 	err := repositories.PostgresRepo.IncrementMessHallAttendance(messhallID)
 	if err != nil {
-		err = response.WriteEntity("Checkin failed")
+		err = json.NewEncoder(w).Encode("Checkin failed")
 		if err != nil {
 			return
 		}
 		return
 	}
 
-	err = response.WriteEntity("Checkin complete")
+	err = json.NewEncoder(w).Encode("Checkin complete")
 	if err != nil {
 		return
 	}
 }
 
 // CheckoutHandler
-func CheckoutHandler(request *restful.Request, response *restful.Response) {
-	messhallID := request.PathParameter("messhall_id")
+func CheckoutHandler(w http.ResponseWriter, r *http.Request) { //(request *restful.Request, response *restful.Response) {
+	params := mux.Vars(r)
+	messhallID := params["messhall_id"]
 
 	err := repositories.PostgresRepo.DecrementMessHallAttendance(messhallID)
 	if err != nil {
-		err = response.WriteEntity("Checkout failed")
+		err = json.NewEncoder(w).Encode("Checkout failed")
 		if err != nil {
 			return
 		}
 		return
 	}
 
-	err = response.WriteEntity("Checkout complete")
+	err = json.NewEncoder(w).Encode("Checkout complete")
 	if err != nil {
 		return
 	}
 }
 
 // GetMessHallMenu
-func GetMessHallMenu(request *restful.Request, response *restful.Response) {
-	messhallID := request.PathParameter("messhall_id")
+func GetMessHallMenu(w http.ResponseWriter, r *http.Request) { //(request *restful.Request, response *restful.Response) {
+	params := mux.Vars(r)
+	messhallID := params["messhall_id"]
 
 	messHallMenuEntries, err := repositories.PostgresRepo.GetMessHallMenuInfo(messhallID)
 	if err != nil {
@@ -98,76 +123,79 @@ func GetMessHallMenu(request *restful.Request, response *restful.Response) {
 		menuRecipes = append(menuRecipes, recipe[0])
 	}
 
-	err = response.WriteEntity(menuRecipes)
+	err = json.NewEncoder(w).Encode(menuRecipes)
 	if err != nil {
 		return
 	}
 }
 
 // GetMessHallInfo returns info about all mess halls
-func GetMessHallInfo(request *restful.Request, response *restful.Response) {
+func GetMessHallInfo(w http.ResponseWriter, r *http.Request) { //(request *restful.Request, response *restful.Response) {
 	messHalls, err := repositories.PostgresRepo.GetAllMessHallsInfo()
 	if err != nil {
 		return
 	}
 
-	err = response.WriteEntity(messHalls)
+	err = json.NewEncoder(w).Encode(messHalls)
 	if err != nil {
 		return
 	}
 }
 
 // GetMessHallInfoByID
-func GetMessHallInfoByID(request *restful.Request, response *restful.Response) {
-	messhallID := request.PathParameter("messhall_id")
+func GetMessHallInfoByID(w http.ResponseWriter, r *http.Request) { //(request *restful.Request, response *restful.Response) {
+	params := mux.Vars(r)
+	messhallID := params["messhall_id"]
 
 	messHall, err := repositories.PostgresRepo.GetMessHallsInfoByID(messhallID)
 	if err != nil {
 		return
 	}
 
-	err = response.WriteEntity(messHall)
+	err = json.NewEncoder(w).Encode(messHall)
 	if err != nil {
 		return
 	}
 }
 
 // GetMessHallAdminInfo
-func GetMessHallAdminInfo(request *restful.Request, response *restful.Response) {
+func GetMessHallAdminInfo(w http.ResponseWriter, r *http.Request) { //(request *restful.Request, response *restful.Response) {
 	messHallAdmins, err := repositories.PostgresRepo.GetAllMessHallAdminsInfo()
 	if err != nil {
 		return
 	}
 
-	err = response.WriteEntity(messHallAdmins)
+	err = json.NewEncoder(w).Encode(messHallAdmins)
 	if err != nil {
 		return
 	}
 }
 
 // GetMessHallAdminInfoByID
-func GetMessHallAdminInfoByID(request *restful.Request, response *restful.Response) {
-	messhallAdminID := request.PathParameter("messhalladmin_id")
+func GetMessHallAdminInfoByID(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	messhallAdminID := params["messhalladmin_id"]
 
 	messHallAdmin, err := repositories.PostgresRepo.GetMessHallAdminsInfoByID(messhallAdminID)
 	if err != nil {
 		return
 	}
 
-	err = response.WriteEntity(messHallAdmin)
+	err = json.NewEncoder(w).Encode(messHallAdmin)
 	if err != nil {
 		return
 	}
 }
 
 // AddMessHall add a new mess hall and its admin
-func AddMessHall(request *restful.Request, response *restful.Response) {
+func AddMessHall(w http.ResponseWriter, r *http.Request) {
 	var queryBody domain.AddMessHallInfoQuery
 
 	/* Get mess info from query */
-	err := request.ReadEntity(&queryBody)
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&queryBody)
 	if err != nil {
-		err = response.WriteEntity("ERROR: new mess hall data mallformed")
+		err = json.NewEncoder(w).Encode("ERROR: new mess hall data mallformed")
 		if err != nil {
 			return
 		}
@@ -195,53 +223,52 @@ func AddMessHall(request *restful.Request, response *restful.Response) {
 	/* Add mess hall info and its admin info to repository */
 	err = repositories.PostgresRepo.AddMessHall(&newMessHall, &newMessHallAdmin)
 	if err != nil {
-		err = response.WriteEntity("ERROR: failed to add new mess hall")
+		err = json.NewEncoder(w).Encode("ERROR: failed to add new mess hall")
 		if err != nil {
 			return
 		}
 		return
 	}
-
-	err = response.WriteEntity("SUCCESS: added new mess hall info")
+	err = json.NewEncoder(w).Encode("SUCCESS: added new mess hall info")
 	if err != nil {
 		return
 	}
 }
 
-// UpdateMessHall
-func UpdateMessHall(request *restful.Request, response *restful.Response) {
-	messhallID := request.PathParameter("messhall_id")
-	newStatus := request.PathParameter("new_status")
+func UpdateMessHall(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	messhallID := params["messhall_id"]
+	newStatus := params["new_status"]
 
 	err := repositories.PostgresRepo.UpdateMessHallStatus(messhallID, newStatus)
 	if err != nil {
-		err = response.WriteEntity("ERROR: failed to update mess hall status")
+		err = json.NewEncoder(w).Encode("ERROR: failed to update mess hall status")
 		if err != nil {
 			return
 		}
 		return
 	}
-
-	err = response.WriteEntity("SUCCESS: mess hall status update.")
+	err = json.NewEncoder(w).Encode("SUCCESS: mess hall status update.")
 	if err != nil {
 		return
 	}
 }
 
 // DeleteMessHall
-func DeleteMessHall(request *restful.Request, response *restful.Response) {
-	messhallID := request.PathParameter("messhall_id")
+func DeleteMessHall(w http.ResponseWriter, r *http.Request) {
+	params := mux.Vars(r)
+	messhallID := params["messhall_id"]
 
 	err := repositories.PostgresRepo.DeleteMessHall(messhallID)
 	if err != nil {
-		err = response.WriteEntity("ERROR: failed to delete mess hall")
+		err = json.NewEncoder(w).Encode("ERROR: failed to delete mess hall")
 		if err != nil {
 			return
 		}
 		return
 	}
 
-	err = response.WriteEntity("SUCCESS: deleted mess hall.")
+	err = json.NewEncoder(w).Encode("SUCCESS: deleted mess hall.")
 	if err != nil {
 		return
 	}
