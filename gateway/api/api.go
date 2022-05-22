@@ -62,7 +62,13 @@ func commonMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func optionsHandler(_ http.ResponseWriter, _ *http.Request) {
+func optionsHandler(w http.ResponseWriter, r *http.Request) {
+	log.Println("!!!!!!!!!!!!!!!!!!!!REceived options request!!!!!!!!!!!!!!!!!!!!")
+	w.WriteHeader(http.StatusOK)
+	err := json.NewEncoder(w).Encode("Received options. Send 200 ok")
+	if err != nil {
+		return
+	}
 	return
 }
 
